@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -30,8 +31,18 @@ public class RoadModuleManager : MonoBehaviour
     [Tooltip("모듈 프리팹에 RoadModule(End Point)이 없을 때 사용할 기본 모듈 길이(m)")]
     public float fallbackModuleLength = 20f;
 
+    [Tooltip("게임 시작 시 미리 만드는 모듈 중 맨 앞(첫 번째) 모듈에는 트래픽을 스폰하지 " +
+             "않도록 할지 여부. 켜두면 시작하자마자 장애물과 만나지 않는 안전 구간이 생깁니다.")]
+    public bool firstModuleIsSafe = true;
+
+    [Tooltip("동시에 유지할 최대 모듈 개수. 새 모듈이 생성되어 이 개수를 넘으면, " +
+             "가장 오래된(제일 뒤에 남은) 모듈과 그 위에 스폰된 트래픽 차량들을 자동으로 삭제합니다.")]
+    public int maxActiveModules = 4;
+
     Vector3 nextSpawnPos;
     Quaternion nextSpawnRot;
+
+    readonly Queue<GameObject> activeModules = new Queue<GameObject>();
 
     void Awake()
     {
@@ -44,11 +55,17 @@ public class RoadModuleManager : MonoBehaviour
         nextSpawnRot = startPoint != null ? startPoint.rotation : transform.rotation;
 
         for (int i = 0; i < initialModuleCount; i++)
-            SpawnNextModule();
+        {
+            bool isFirst = (i == 0) && firstModuleIsSafe;
+            SpawnNextModule(isFirst);
+        }
     }
 
     /// <summary>다음 도로 모듈을 현재 이어 붙일 위치에 생성하고, 이어 붙일 위치를 그 모듈의 끝으로 갱신합니다.</summary>
-    public void SpawnNextModule()
+    public void SpawnNextModule() => SpawnNextModule(false);
+
+    /// <param name="skipTraffic">true면 이 모듈에 TrafficOnModule이 있어도 트래픽을 스폰하지 않습니다.</param>
+    public void SpawnNextModule(bool skipTraffic)
     {
         if (modulePrefabs == null || modulePrefabs.Length == 0)
         {
@@ -58,7 +75,14 @@ public class RoadModuleManager : MonoBehaviour
 
         GameObject prefab = modulePrefabs[Random.Range(0, modulePrefabs.Length)];
         GameObject instance = Instantiate(prefab, nextSpawnPos, nextSpawnRot);
-        instance.transform.parent = transform;
+
+        // Start()가 실행되기 전(같은 프레임 내)에 미리 설정해두면, TrafficOnModule이
+        // 이 모듈에는 트래픽을 스폰하지 않고 건너뜁니다.
+        if (skipTraffic)
+        {
+            var traffic = instance.GetComponent<TrafficOnModule>();
+            if (traffic != null) traffic.skipTraffic = true;
+        }
 
         var module = instance.GetComponent<RoadModule>();
         if (module != null && module.endPoint != null)

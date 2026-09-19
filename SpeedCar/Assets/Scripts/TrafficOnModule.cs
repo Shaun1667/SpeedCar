@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -27,10 +28,6 @@ public class TrafficOnModule : MonoBehaviour
     [Tooltip("모듈 로컬 기준, 차량이 놓일 y 위치 (도로 표면 높이에 맞게 조절)")]
     public float spawnYOffset = 0f;
 
-    [Tooltip("모듈 로컬 기준, 차량이 놓일 z 위치 (도로 표면 높이에 맞게 조절)")]
-    public float spawnZOffset = 0f;
-
-
     [Range(0f, 1f)]
     [Tooltip("차선 하나당 차량이 스폰될 확률")]
     public float spawnChancePerLane = 0.4f;
@@ -51,6 +48,13 @@ public class TrafficOnModule : MonoBehaviour
     [Tooltip("Traffic Parent를 자동으로 찾을 때 사용할 이름")]
     public string trafficParentName = "TrafficParent";
 
+    [Tooltip("켜두면 이 모듈에는 트래픽을 스폰하지 않습니다. 게임 시작 직후 첫 모듈처럼 " +
+             "안전 구간이 필요할 때 RoadModuleManager가 이 값을 true로 설정해줍니다.")]
+    public bool skipTraffic = false;
+
+    // 이 모듈이 스폰한 트래픽 차량들. 모듈이 삭제될 때 같이 정리하기 위해 기억해둡니다.
+    readonly List<GameObject> spawnedCars = new List<GameObject>();
+
     void Awake()
     {
         if (trafficParent == null)
@@ -62,6 +66,7 @@ public class TrafficOnModule : MonoBehaviour
 
     void Start()
     {
+        if (skipTraffic) return;
         if (trafficPrefabs == null || trafficPrefabs.Length == 0 || lanePositions == null || lanePositions.Length == 0)
             return;
 
@@ -86,10 +91,13 @@ public class TrafficOnModule : MonoBehaviour
         // 체계(-2,-1,0,1,2)이므로, 모듈의 로컬 좌표로 변환하지 않고 그대로 사용합니다.
         // (TransformPoint를 쓰면 모듈 오브젝트의 위치/회전/스케일에 따라 차선 x가
         // 밀릴 수 있어서, x는 절대값 그대로 두고 z(앞뒤 위치)만 모듈 기준으로 계산합니다)
+        // z는 차선마다 minZOffset~maxZOffset 사이에서 무작위로 골라, 한 줄로
+        // 나란히 서있지 않고 제각각 다른 간격으로 늘어서도록 합니다.
+        float randomZ = Random.Range(minZOffset, maxZOffset);
         Vector3 worldPos = new Vector3(
             laneX,
             transform.position.y + spawnYOffset,
-            transform.position.z + spawnZOffset);
+            transform.position.z + randomZ);
 
         // 부모를 같이 넘기며 Instantiate하면 위치가 부모 기준 로컬 좌표로 해석되는
         // 경우가 있어 혼동이 생기기 쉽습니다. 그래서 일단 부모 없이 생성해 월드
@@ -103,8 +111,27 @@ public class TrafficOnModule : MonoBehaviour
         if (car.GetComponent<TrafficCarAutoSpeed>() == null)
             car.AddComponent<TrafficCarAutoSpeed>();
 
+        if (car.GetComponent<LaneBumper>() == null)
+        {
+            var bumper = car.AddComponent<LaneBumper>();
+            bumper.lanePositions = lanePositions;
+        }
+
         if (tagAsTraffic)
             SetTagRecursive(car.transform, trafficTag);
+
+        spawnedCars.Add(car);
+    }
+
+    // 이 모듈이 삭제될 때(RoadModuleManager가 오래된 모듈을 정리할 때 등),
+    // 이 모듈 위에 스폰했던 트래픽 차량들도 함께 삭제합니다.
+    // (차량들은 TrafficParent 밑에 있어서 모듈을 지워도 자동으로 같이 지워지지 않기 때문)
+    void OnDestroy()
+    {
+        foreach (var car in spawnedCars)
+        {
+            if (car != null) Destroy(car);
+        }
     }
 
     static void SetTagRecursive(Transform t, string tag)

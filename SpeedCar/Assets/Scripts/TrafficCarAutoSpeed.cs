@@ -12,18 +12,18 @@ public class TrafficCarAutoSpeed : MonoBehaviour
     [Tooltip("생성 시점에 등록된 전진 속도 (읽기 전용 확인용, Inspector에서 직접 바꿔도 됩니다)")]
     public float speed;
 
-    [Tooltip("플레이어 속도 기준 +- 얼마까지 무작위로 속도를 다르게 할지 (m/s)")]
-    public float speedVariance = 3f;
+    [Tooltip("플레이어 속도 기준 얼마까지 무작위로 속도를 다르게 할지 (m/s)")]
+    public float speedVariance = 5f;
 
     [Tooltip("무작위 편차를 적용해도 이 값보다 느려지지는 않도록 하는 최소 속도 (m/s)")]
-    public float minSpeed = 2f;
+    public float minSpeed = 0.1f;
 
     void Start()
     {
         var player = FindFirstObjectByType<PlayerMovement>();
         if (player != null)
         {
-            speed = player.speed + Random.Range(-speedVariance, speedVariance);
+            speed = player.speed + Random.Range(-speedVariance, 2);
             speed = Mathf.Max(speed, minSpeed);
         }
     }

@@ -23,6 +23,11 @@ public class PlayerController : MonoBehaviour
     // SmoothDamp 전용 내부 속도 값 (private으로 감춰서 Inspector에서 실수로 값이 남지 않게 함)
     Vector3 velocity;
 
+    /// <summary>가장 최근 클릭에서 x목표가 바뀐 거리(월드 단위). 차선 간격이 1이면
+    /// 이 값 자체가 "몇 칸을 건너뛰었는지"와 같습니다. LaneBumper가 충돌 시
+    /// 밀려나는 거리를 계산할 때 참고합니다.</summary>
+    public float LastJumpDistance { get; private set; }
+
     void Awake()
     {
         if (cam == null) cam = Camera.main;
@@ -59,7 +64,9 @@ public class PlayerController : MonoBehaviour
                 var controller = hit.transform.GetComponent<ControllerCollider>();
                 if (controller != null)
                 {
+                    float previousTargetX = targetPos.x;
                     targetPos.x = controller.movePosition.x;
+                    LastJumpDistance = Mathf.Abs(targetPos.x - previousTargetX);
                     hasTarget = true;
                 }
             }
