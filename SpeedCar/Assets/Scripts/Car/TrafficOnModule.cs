@@ -1,11 +1,10 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// 도로 모듈 프리팹에 붙이면, 모듈이 생성될 때(Start) 5개 차선 위치 중 일부에
 /// 무작위로 트래픽 자동차를 올려놓습니다. 각 차량에는 자동으로
-/// TrafficCarAutoSpeed가 붙어서, 생성되는 순간의 플레이어 속도를 한 번
-/// 등록하고 그 속도로 계속 앞으로 이동합니다.
+/// TrafficCarAutoSpeed(생성 시점 플레이어 속도로 전진)와 LaneBumper(플레이어/다른
+/// 차량과 부딪히면 옆 차선으로 튕겨나가거나 맵 밖으로 날아감)가 붙습니다.
 ///
 /// 사용법: 도로 모듈 프리팹(Root)에 이 컴포넌트를 붙이고 Traffic Prefabs에
 /// 자동차 프리팹들을 등록하세요. Lane Positions는 PlayerController의 차선
@@ -19,7 +18,9 @@ public class TrafficOnModule : MonoBehaviour
     [Tooltip("차선 x좌표들 (도로 폭에 맞게 조절). 기본은 5차선: -2, -1, 0, 1, 2")]
     public float[] lanePositions = { -2f, -1f, 0f, 1f, 2f };
 
-    [Tooltip("모듈 기준, 차량이 놓일 z 위치의 최소값 (이 범위 안에서 차선마다 무작위로 정해집니다)")]
+    [Tooltip("모듈 기준, 차량이 놓일 z 위치의 최소값 (이 범위 안에서 차선마다 무작위로 정해집니다). " +
+             "RoadModuleManager가 모듈 길이를 알려주는 경우, 실제로는 모듈 경계(+ Edge Margin) " +
+             "안쪽으로 한 번 더 제한됩니다.")]
     public float minZOffset = -5f;
 
     [Tooltip("모듈 기준, 차량이 놓일 z 위치의 최대값")]
@@ -52,8 +53,23 @@ public class TrafficOnModule : MonoBehaviour
              "안전 구간이 필요할 때 RoadModuleManager가 이 값을 true로 설정해줍니다.")]
     public bool skipTraffic = false;
 
-    // 이 모듈이 스폰한 트래픽 차량들. 모듈이 삭제될 때 같이 정리하기 위해 기억해둡니다.
-    readonly List<GameObject> spawnedCars = new List<GameObject>();
+    [Tooltip("모듈의 앞/뒤 경계에서 이 거리(m) 안쪽으로는 차를 스폰하지 않습니다. " +
+             "Module Length를 알고 있을 때만 적용됩니다.")]
+    public float edgeMargin = 0.5f;
+
+    // RoadModuleManager가 이 모듈을 생성한 직후 Start()가 실행되기 전에 SetModuleLength로
+    // 알려주는, 이 모듈의 실제 앞뒤 길이(m). 모르면 -1(미설정)로 남아있고, 그럴 땐 기존처럼
+    // minZOffset~maxZOffset 범위를 그대로 사용합니다.
+    float moduleLength = -1f;
+
+    /// <summary>이 모듈의 실제 길이를 알려줍니다. RoadModuleManager가 모듈을 생성한 직후
+    /// (Start()가 실행되기 전) 호출해서, 트래픽이 모듈 경계를 벗어나 옆 모듈 영역까지
+    /// 스폰되지 않도록 합니다. (경계를 넘어가면, 이 모듈이 삭제될 때 사실은 옆 모듈에
+    /// 속한 것처럼 보이는 차까지 같이 사라져버리는 문제가 생깁니다)</summary>
+    public void SetModuleLength(float length)
+    {
+        moduleLength = length;
+    }
 
     void Awake()
     {
@@ -94,6 +110,19 @@ public class TrafficOnModule : MonoBehaviour
         // z는 차선마다 minZOffset~maxZOffset 사이에서 무작위로 골라, 한 줄로
         // 나란히 서있지 않고 제각각 다른 간격으로 늘어서도록 합니다.
         float randomZ = Random.Range(minZOffset, maxZOffset);
+
+        // moduleLength를 알고 있다면(RoadModuleManager가 알려준 경우), randomZ가 이 모듈의
+        // 실제 앞/뒤 경계를 넘어가지 않도록 한 번 더 제한합니다. 이걸 안 하면 min/maxZOffset
+        // 값에 따라 차가 옆 모듈 영역까지 넘어가 스폰될 수 있는데, 그 차는 여전히 "이
+        // 모듈이 스폰한 차"로 기억되기 때문에, 나중에 이 모듈이 삭제될 때 옆(특히 앞쪽)
+        // 모듈에 속한 것처럼 보이던 차까지 같이 사라져버리는 원인이 됩니다.
+        if (moduleLength > 0f)
+        {
+            float safeMin = Mathf.Min(edgeMargin, moduleLength * 0.5f);
+            float safeMax = Mathf.Max(moduleLength - edgeMargin, safeMin);
+            randomZ = Mathf.Clamp(randomZ, safeMin, safeMax);
+        }
+
         Vector3 worldPos = new Vector3(
             laneX,
             transform.position.y + spawnYOffset,
@@ -120,18 +149,10 @@ public class TrafficOnModule : MonoBehaviour
         if (tagAsTraffic)
             SetTagRecursive(car.transform, trafficTag);
 
-        spawnedCars.Add(car);
-    }
-
-    // 이 모듈이 삭제될 때(RoadModuleManager가 오래된 모듈을 정리할 때 등),
-    // 이 모듈 위에 스폰했던 트래픽 차량들도 함께 삭제합니다.
-    // (차량들은 TrafficParent 밑에 있어서 모듈을 지워도 자동으로 같이 지워지지 않기 때문)
-    void OnDestroy()
-    {
-        foreach (var car in spawnedCars)
-        {
-            if (car != null) Destroy(car);
-        }
+        // 주의: 이 차는 더 이상 "이 모듈이 스폰했다"는 이유로 모듈과 함께 삭제되지
+        // 않습니다. 모듈이 먼저 삭제되어도 차는 화면에 그대로 남아있고, 대신
+        // TrafficCarAutoSpeed가 매 프레임 플레이어와의 z거리를 확인해서 스스로
+        // 사라질 시점을 판단합니다. (모듈 삭제 시점과 무관하게 판단하기 위함)
     }
 
     static void SetTagRecursive(Transform t, string tag)

@@ -32,6 +32,7 @@ Transform:
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 2007649511414042689}
+  - {fileID: 7418174538265500797}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &4879727020028268785
@@ -49,6 +50,9 @@ MonoBehaviour:
   speed: 0
   speedVariance: 5
   minSpeed: 2
+  speedReductionPerSecond: 0.15
+  maxSpeedReduction: 15
+  despawnDistanceBehindPlayer: 40
 --- !u!65 &-6802846355833817667
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -68,8 +72,75 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.39, y: 0.25, z: 0.82}
-  m_Center: {x: 0, y: 0.12, z: 0}
+  m_Size: {x: 0.39, y: 0.25, z: 0.61}
+  m_Center: {x: 0, y: 0.12, z: 0.06}
+--- !u!1 &5090823304847185018
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7418174538265500797}
+  - component: {fileID: 873275455251606299}
+  - component: {fileID: 5214939335724614760}
+  m_Layer: 0
+  m_Name: CarBack
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7418174538265500797
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5090823304847185018}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2469733943645156713}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &873275455251606299
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5090823304847185018}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.16, y: 0.2, z: 0.09}
+  m_Center: {x: 0, y: 0.15, z: -0.39}
+--- !u!114 &5214939335724614760
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5090823304847185018}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0c3c491ae85670e45abd66fce9bfd540, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarBackTrigger
+  playerTag: Player
 --- !u!1001 &2041858971269035946
 PrefabInstance:
   m_ObjectHideFlags: 0

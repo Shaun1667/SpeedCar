@@ -39,6 +39,11 @@ public class RoadModuleManager : MonoBehaviour
              "가장 오래된(제일 뒤에 남은) 모듈과 그 위에 스폰된 트래픽 차량들을 자동으로 삭제합니다.")]
     public int maxActiveModules = 4;
 
+    [Tooltip("삭제 대상이 된 오래된 모듈을 몇 초 뒤에 실제로 삭제할지. 0이면 즉시 삭제합니다. " +
+             "값을 주면 모듈이 목록에서는 바로 빠지되(다음 트림 판단에는 영향 없음), 화면에서는 " +
+             "이 시간만큼 더 남아있다가 사라져서 너무 이르게 사라지는 느낌을 줄일 수 있습니다.")]
+    public float moduleDestroyDelay = 3f;
+
     Vector3 nextSpawnPos;
     Quaternion nextSpawnRot;
 
@@ -74,14 +79,16 @@ public class RoadModuleManager : MonoBehaviour
         }
 
         GameObject prefab = modulePrefabs[Random.Range(0, modulePrefabs.Length)];
+        Vector3 spawnOrigin = nextSpawnPos; // 이 모듈이 시작하는 위치 (길이 계산용)
         GameObject instance = Instantiate(prefab, nextSpawnPos, nextSpawnRot);
+        activeModules.Enqueue(instance);
 
         // Start()가 실행되기 전(같은 프레임 내)에 미리 설정해두면, TrafficOnModule이
         // 이 모듈에는 트래픽을 스폰하지 않고 건너뜁니다.
-        if (skipTraffic)
+        var traffic = instance.GetComponent<TrafficOnModule>();
+        if (skipTraffic && traffic != null)
         {
-            var traffic = instance.GetComponent<TrafficOnModule>();
-            if (traffic != null) traffic.skipTraffic = true;
+            traffic.skipTraffic = true;
         }
 
         var module = instance.GetComponent<RoadModule>();
@@ -94,6 +101,28 @@ public class RoadModuleManager : MonoBehaviour
         {
             // End Point가 없으면 고정 길이만큼 현재 방향(forward)으로 이어 붙임
             nextSpawnPos += nextSpawnRot * Vector3.forward * fallbackModuleLength;
+        }
+
+        // 이 모듈의 실제 길이(시작 위치 ~ 다음 모듈이 시작하는 위치)를 TrafficOnModule에
+        // 알려줘서, 트래픽 차량이 이 모듈의 경계를 넘어 옆 모듈 영역까지 스폰되지 않게
+        // 합니다. (경계를 넘으면, 이 모듈을 나중에 삭제할 때 옆 모듈 차량까지 같이
+        // 사라지는 것처럼 보이는 문제가 생깁니다)
+        if (traffic != null)
+            traffic.SetModuleLength(Vector3.Distance(spawnOrigin, nextSpawnPos));
+
+        TrimOldModules();
+    }
+
+    // 유지 중인 모듈 개수가 maxActiveModules를 넘으면, 가장 오래된 모듈부터 삭제 대상으로 정합니다.
+    // 다만 바로 지우지 않고 moduleDestroyDelay만큼 시간을 두고 지워서, 아직 화면/플레이어
+    // 근처에 남아있는 모듈이 너무 갑작스럽게 사라지지 않도록 합니다.
+    // TrafficOnModule.OnDestroy()가 그 모듈이 스폰했던 트래픽 차량들도 같이 정리해줍니다.
+    void TrimOldModules()
+    {
+        while (activeModules.Count > maxActiveModules)
+        {
+            GameObject old = activeModules.Dequeue();
+            if (old != null) Destroy(old, moduleDestroyDelay);
         }
     }
 }

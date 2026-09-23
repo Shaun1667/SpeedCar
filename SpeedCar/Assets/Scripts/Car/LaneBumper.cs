@@ -34,15 +34,23 @@ public class LaneBumper : MonoBehaviour
 
     [Tooltip("한 번 반응한 뒤 다시 반응하기까지 최소 대기 시간(초). 같은 충돌에 " +
              "여러 프레임 동안 겹쳐서 여러 번 튕기는 것을 방지합니다.")]
-    public float cooldown = 0.1f;
+    public float cooldown = 0.5f;
 
     [Tooltip("반응할 상대방 태그들")]
     public string[] reactTags = { "Player", "Traffic" };
+
+    [Tooltip("옆 차선으로 튕겨나가는 동안 y축(좌우 방향)으로 최대 몇 도까지 살짝 돌아갔다가 " +
+             "도착하면 다시 원래 각도로 돌아올지. 0이면 회전 효과 없이 예전처럼 미끄러지듯 이동만 합니다.")]
+    public float maxTurnAngle = 25f;
 
     Rigidbody rb;
     float lastBumpTime = -999f;
     bool flungOff;
     Vector3 flyDirection;
+
+    // 스폰될 때(또는 처음 Awake될 때)의 원래 회전. 튕겨나가는 동안 잠깐 여기서 벗어났다가
+    // 다시 정확히 이 각도로 복귀합니다.
+    Vector3 baseEuler;
 
     void Awake()
     {
@@ -53,6 +61,8 @@ public class LaneBumper : MonoBehaviour
         rb.isKinematic = false;
         rb.useGravity = false;
         rb.constraints = RigidbodyConstraints.FreezeAll;
+
+        baseEuler = transform.eulerAngles;
     }
 
     void Update()
@@ -88,35 +98,77 @@ public class LaneBumper : MonoBehaviour
         else
             direction = transform.position.x > other.position.x ? 1 : -1;
 
-        int targetLane = myLane + direction;
-
-        if (targetLane < 0 || targetLane >= lanePositions.Length)
+        // 기본은 한 칸만 밀려나지만, 부딪힌 상대가 플레이어이고 방금 여러 차선을
+        // 한 번에 건너뛰어 온 상태라면 그 칸 수만큼 더 멀리 밀려납니다.
+        // other는 "부딪힌 콜라이더가 붙어있는 오브젝트"의 Transform입니다. 플레이어 차량이
+        // 루트에 PlayerController를 두고 실제 충돌용 Collider는 자식 오브젝트(차체 메쉬 등)에
+        // 붙어있는 구조라면, 여기서 그냥 GetComponent를 쓰면 같은 오브젝트에서만 찾기 때문에
+        // 못 찾고 null이 되어 항상 기본값(1칸)으로만 밀려나는 문제가 생깁니다. 그래서
+        // GetComponentInParent로 자기 자신과 부모 쪽까지 함께 찾도록 합니다.
+        int pushLanes = 1;
+        var player = other.GetComponentInParent<PlayerController>();
+        if (player != null)
         {
+            int extra = Mathf.RoundToInt(player.LastJumpDistance * playerJumpPushMultiplier);
+            pushLanes = Mathf.Max(1, extra);
+        }
+
+        int targetLane = myLane + direction * pushLanes;
+        bool outOfRange = targetLane < 0 || targetLane >= lanePositions.Length;
+
+        if (outOfRange && player != null)
+        {
+            // 플레이어에게 밀려서 범위를 벗어난 경우에만 맵 밖으로 날아갑니다.
             FlyOffMap(direction);
         }
         else
         {
+            // 자동차끼리 부딪힌 경우에는 맵 밖으로 나가지 않고, 범위를 벗어나면 그냥
+            // 가장 가장자리 차선에서 멈춥니다.
+            int clampedLane = Mathf.Clamp(targetLane, 0, lanePositions.Length - 1);
+
+            // 플레이어에게 밀린 경우에만 소리를 재생합니다. 자동차끼리 부딪혀서
+            // 밀려나는 경우에는 소리를 재생하지 않습니다.
+            if (player != null && SEManager.Instance != null)
+                SEManager.Instance.PlaySound("CarPush");
+
             StopAllCoroutines();
-            StartCoroutine(BounceToLane(lanePositions[targetLane]));
+            StartCoroutine(BounceToLane(lanePositions[clampedLane]));
         }
     }
 
     IEnumerator BounceToLane(float targetX)
     {
         float startX = transform.position.x;
+
+        // 이동 방향(왼쪽/오른쪽)에 따라 회전을 어느 쪽으로 기울일지 정합니다.
+        float turnDirection = Mathf.Approximately(targetX, startX) ? 0f : Mathf.Sign(targetX - startX);
+
         float t = 0f;
         while (t < bounceDuration)
         {
             t += Time.deltaTime;
+            float ratio = Mathf.Clamp01(t / bounceDuration);
+
             Vector3 pos = transform.position;
-            pos.x = Mathf.Lerp(startX, targetX, t / bounceDuration);
+            pos.x = Mathf.Lerp(startX, targetX, ratio);
             transform.position = pos;
+
+            // sin(0)=0, sin(중간)=1, sin(끝)=0 이 되는 곡선이라, 이동을 시작할 때 0도에서
+            // 점점 기울어졌다가 목표 차선에 도착할 즈음엔 다시 자연스럽게 0도(원래 각도)로
+            // 돌아옵니다.
+            float turnAmount = Mathf.Sin(ratio * Mathf.PI) * maxTurnAngle * turnDirection;
+            transform.rotation = Quaternion.Euler(baseEuler.x, baseEuler.y + turnAmount, baseEuler.z);
+
             yield return null;
         }
 
         Vector3 finalPos = transform.position;
         finalPos.x = targetX;
         transform.position = finalPos;
+
+        // 혹시 도중에 오차가 남아있을 수 있으니, 끝나면 확실하게 원래 각도로 맞춰줍니다.
+        transform.rotation = Quaternion.Euler(baseEuler.x, baseEuler.y, baseEuler.z);
     }
 
     void FlyOffMap(int direction)
@@ -124,6 +176,13 @@ public class LaneBumper : MonoBehaviour
         flungOff = true;
         flyDirection = new Vector3(direction, 0f, 0f);
         Destroy(gameObject, flyOffDestroyDelay);
+
+        if (SEManager.Instance != null)
+            SEManager.Instance.PlaySound("CarFlyOff");
+
+        // 차 한 대를 레일 밖으로 날려버릴 때마다 점수 1점을 올립니다.
+        if (GameManager.Instance != null)
+            GameManager.Instance.AddScore(1);
     }
 
     int FindNearestLaneIndex(float x)
